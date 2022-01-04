@@ -1,3 +1,4 @@
+steps:
 # Get the short Commit ID from github.
 - name: "gcr.io/cloud-builders/git"
   entrypoint: bash

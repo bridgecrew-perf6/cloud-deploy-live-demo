@@ -1,0 +1,51 @@
+steps:
+# Get the short Commit ID from github.
+- name: "gcr.io/cloud-builders/git"
+  entrypoint: bash
+  args:
+  - '-c'
+  - |
+        SHORT_SHA=$(git rev-parse --short HEAD) 
+# Add the Commit ID to the Dockerfile and the static page.
+- name: "ubuntu"
+  entrypoint: bash
+  args:
+  - '-c'
+  - |
+        sed -i 's/123/'""'/g' k8s-pod.yaml  
+        sed -i 's/COMMIT_ID/'""'/g' index.html 
+        cat k8s-pod.yaml
+
+# build the container image
+- name: "gcr.io/cloud-builders/docker"
+  args: ["build", "-t", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:", "."]
+# push container image
+- name: "gcr.io/cloud-builders/docker"
+  args: ["push", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:"]
+# Get image digest for attesting BinAuth only works on image digest.
+- name: "gcr.io/cloud-builders/gke-deploy"
+  entrypoint: bash  
+  args:
+  - '-c'
+  - |
+       gke-deploy prepare --filename k8s-pod.yaml --image us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx: --version 
+       cp output/expanded/aggregated-resources.yaml k8s-pod.yaml
+
+# attest the built container
+- name: "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/binauthz-attestation:latest"
+  args:
+  - '--artifact-url'
+  - 'us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:'
+  - '--attestor'
+  - 'projects/johnwhitaker-project-30f8b2ba/attestors/clouddeploy_demo'
+  - '--keyversion'
+  - 'projects/johnwhitaker-project-30f8b2ba/locations/global/keyRings/my-binauthz-keyring/cryptoKeys/my-binauthz-key/cryptoKeyVersions/1' 
+ 
+  # deploy container image to GKE
+- name: "gcr.io/cloud-builders/gcloud"
+  entrypoint: 'bash'
+  args:
+  - '-c'
+  - |
+       gcloud beta deploy apply --file clouddeploy.yaml --region=us-central1 --project=johnwhitaker-project-30f8b2ba
+       gcloud beta deploy releases create nginx-release- --project=johnwhitaker-project-30f8b2ba --region=us-central1 --delivery-pipeline=my-nginx-app-1

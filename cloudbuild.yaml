@@ -1,4 +1,3 @@
-steps:
 # Get the short Commit ID from github.
 - name: "gcr.io/cloud-builders/git"
   entrypoint: bash
@@ -12,30 +11,30 @@ steps:
   args:
   - '-c'
   - |
-        sed -i 's/123/'""'/g' k8s-pod.yaml  
-        sed -i 's/COMMIT_ID/'""'/g' index.html 
+        sed -i 's/123/'"${SHORT_SHA}"'/g' k8s-pod.yaml  
+        sed -i 's/COMMIT_ID/'"${SHORT_SHA}"'/g' index.html 
         cat k8s-pod.yaml
 
 # build the container image
 - name: "gcr.io/cloud-builders/docker"
-  args: ["build", "-t", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:", "."]
+  args: ["build", "-t", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:${SHORT_SHA}", "."]
 # push container image
 - name: "gcr.io/cloud-builders/docker"
-  args: ["push", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:"]
+  args: ["push", "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:${SHORT_SHA}"]
 # Get image digest for attesting BinAuth only works on image digest.
 - name: "gcr.io/cloud-builders/gke-deploy"
   entrypoint: bash  
   args:
   - '-c'
   - |
-       gke-deploy prepare --filename k8s-pod.yaml --image us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx: --version 
+       gke-deploy prepare --filename k8s-pod.yaml --image us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:${SHORT_SHA} --version ${SHORT_SHA}
        cp output/expanded/aggregated-resources.yaml k8s-pod.yaml
 
 # attest the built container
 - name: "us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/binauthz-attestation:latest"
   args:
   - '--artifact-url'
-  - 'us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:'
+  - 'us-central1-docker.pkg.dev/johnwhitaker-project-30f8b2ba/source-to-prod-demo/nginx:${SHORT_SHA}'
   - '--attestor'
   - 'projects/johnwhitaker-project-30f8b2ba/attestors/clouddeploy_demo'
   - '--keyversion'
@@ -48,4 +47,4 @@ steps:
   - '-c'
   - |
        gcloud beta deploy apply --file clouddeploy.yaml --region=us-central1 --project=johnwhitaker-project-30f8b2ba
-       gcloud beta deploy releases create nginx-release- --project=johnwhitaker-project-30f8b2ba --region=us-central1 --delivery-pipeline=my-nginx-app-1
+       gcloud beta deploy releases create nginx-release-${SHORT_SHA} --project=johnwhitaker-project-30f8b2ba --region=us-central1 --delivery-pipeline=my-nginx-app-1
